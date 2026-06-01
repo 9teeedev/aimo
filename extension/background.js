@@ -2,6 +2,7 @@ import { fetchAll } from './fetchers.js';
 
 const LOCAL_BASE = 'http://localhost:3030';
 const INGEST_BASE = `${LOCAL_BASE}/ingest`;
+const ENABLED_URL = `${LOCAL_BASE}/api/enabled`;
 const PENDING_URL = `${LOCAL_BASE}/api/pending-refresh`;
 const POLL_ALARM = 'aimo:poll-pending';
 
@@ -12,6 +13,10 @@ chrome.runtime.onMessage.addListener((msg, sender, respond) => {
   }
   if (msg?.type === 'zai:capture-jwt' && typeof msg.jwt === 'string' && msg.jwt.length > 20) {
     chrome.storage.local.set({ zaiJwt: msg.jwt, zaiJwtCapturedAt: Date.now() });
+    return false;
+  }
+  if (msg?.type === 'minimax:capture-tokens' && Array.isArray(msg.tokens) && msg.tokens.length > 0) {
+    chrome.storage.local.set({ minimaxTokens: msg.tokens, minimaxTokensCapturedAt: Date.now() });
     return false;
   }
 });
@@ -34,10 +39,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 async function handleFetchAll({ pushToLocal }) {
-  const { zaiApiKey, zaiJwt, enabled } = await chrome.storage.local.get(['zaiApiKey', 'zaiJwt', 'enabled']);
-  const results = await fetchAll({ zaiApiKey, zaiJwt, enabled: enabled || {} });
+  const { zaiApiKey, zaiJwt, deepseekApiKey, enabled } = await chrome.storage.local.get(['zaiApiKey', 'zaiJwt', 'deepseekApiKey', 'enabled']);
+  const results = await fetchAll({ zaiApiKey, zaiJwt, deepseekApiKey, enabled: enabled || {} });
   if (pushToLocal) {
-    await Promise.allSettled(results.map(pushToIngest));
+    await Promise.allSettled([
+      ...results.map(pushToIngest),
+      pushEnabled(enabled || {}),
+    ]);
   }
   return results;
 }
@@ -48,6 +56,16 @@ async function pushToIngest(result) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(result),
+    });
+  } catch {}
+}
+
+async function pushEnabled(enabled) {
+  try {
+    await fetch(ENABLED_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(enabled),
     });
   } catch {}
 }

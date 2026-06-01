@@ -60,6 +60,8 @@
     <label class="prov-toggle"><input type="checkbox" data-prov="claude" checked> <span>Claude</span></label>
     <label class="prov-toggle"><input type="checkbox" data-prov="codex" checked> <span>Codex</span></label>
     <label class="prov-toggle"><input type="checkbox" data-prov="ollama" checked> <span>Ollama</span></label>
+    <label class="prov-toggle"><input type="checkbox" data-prov="deepseek" checked> <span>DeepSeek</span></label>
+    <label class="prov-toggle"><input type="checkbox" data-prov="minimax" checked> <span>MiniMax</span></label>
   </div>
 </div>
 
@@ -100,6 +102,23 @@
     <button id="save-key" class="primary">Save</button>
   </div>
   <small>Stored via chrome.storage.local. Tried only when the auto-captured JWT doesn't work.</small>
+
+  <div class="row" style="margin-top: 16px; margin-bottom: 10px;">
+    <span class="status"><span class="status-dot" id="deepseek-dot"></span>DeepSeek: <span id="deepseek-text">checking…</span></span>
+  </div>
+
+  <label>DeepSeek API key</label>
+  <div class="row">
+    <input type="password" id="deepseekkey" placeholder="paste your DeepSeek API key">
+    <button id="save-deepseek-key" class="primary">Save</button>
+  </div>
+  <small>Stored via chrome.storage.local. Get your key at <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:#7dd3fc">platform.deepseek.com/api_keys</a></small>
+
+  <div class="row" style="margin-top: 16px; margin-bottom: 10px;">
+    <span class="status"><span class="status-dot" id="minimax-dot"></span>MiniMax: <span id="minimax-text">checking…</span></span>
+    <button id="minimax-open">Open MiniMax</button>
+  </div>
+  <small>Login at <a href="https://platform.minimax.io/" target="_blank" style="color:#7dd3fc">platform.minimax.io</a> — the extension uses your browser session cookies to check quota.</small>
 </div>
 
 <h2>Quick links — provider usage pages</h2>
@@ -120,6 +139,14 @@
     <a class="linkcard" href="https://ollama.com/settings" target="_blank">
       <div class="who">Ollama</div>
       <div class="what">ollama.com/settings</div>
+    </a>
+    <a class="linkcard" href="https://platform.deepseek.com/usage" target="_blank">
+      <div class="who">DeepSeek</div>
+      <div class="what">platform.deepseek.com/usage</div>
+    </a>
+    <a class="linkcard" href="https://platform.minimax.io/" target="_blank">
+      <div class="who">MiniMax</div>
+      <div class="what">platform.minimax.io</div>
     </a>
   </div>
   <small style="margin-top: 10px;">Opening these pages in the same browser refreshes the session cookies the extension relies on. Visiting z.ai also triggers JWT capture.</small>

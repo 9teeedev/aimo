@@ -6,6 +6,13 @@ const serverRecheckBtn = document.getElementById('server-recheck');
 const zaiDot = document.getElementById('zai-dot');
 const zaiText = document.getElementById('zai-text');
 const zaiCaptureBtn = document.getElementById('zai-capture');
+const deepseekKeyInput = document.getElementById('deepseekkey');
+const saveDeepseekKeyBtn = document.getElementById('save-deepseek-key');
+const deepseekDot = document.getElementById('deepseek-dot');
+const deepseekText = document.getElementById('deepseek-text');
+const minimaxDot = document.getElementById('minimax-dot');
+const minimaxText = document.getElementById('minimax-text');
+const minimaxOpenBtn = document.getElementById('minimax-open');
 const toast = document.getElementById('toast');
 
 const LOCAL_SERVER = 'http://localhost:3030';
@@ -15,15 +22,21 @@ init();
 async function init() {
   await Promise.all([
     loadApiKey(),
+    loadDeepseekApiKey(),
     loadEnabled(),
     checkServer(),
     checkZaiJwt(),
+    checkDeepseekKey(),
   ]);
 
   saveKeyBtn.addEventListener('click', saveApiKey);
+  saveDeepseekKeyBtn.addEventListener('click', saveDeepseekApiKey);
   serverRecheckBtn.addEventListener('click', checkServer);
   zaiCaptureBtn.addEventListener('click', () => {
     chrome.tabs.create({ url: 'https://z.ai/' });
+  });
+  minimaxOpenBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: 'https://platform.minimax.io/' });
   });
 
   document.querySelectorAll('input[data-prov]').forEach((cb) => {
@@ -41,6 +54,7 @@ async function init() {
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.zaiJwt) checkZaiJwt();
     if (changes.zaiApiKey) loadApiKey();
+    if (changes.deepseekApiKey) { loadDeepseekApiKey(); checkDeepseekKey(); }
   });
 }
 
@@ -58,6 +72,14 @@ async function saveEnabled() {
     map[cb.dataset.prov] = cb.checked;
   });
   await chrome.storage.local.set({ enabled: map });
+  // Push the enabled map to the local server so the dashboard hides disabled providers.
+  try {
+    await fetch(`${LOCAL_SERVER}/api/enabled`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(map),
+    });
+  } catch {}
   showToast('Saved');
 }
 
@@ -90,6 +112,28 @@ async function checkServer() {
   } catch {
     setDot(serverDot, 'off');
     serverText.textContent = 'offline — start the server below';
+  }
+}
+
+async function loadDeepseekApiKey() {
+  const { deepseekApiKey } = await chrome.storage.local.get('deepseekApiKey');
+  if (deepseekApiKey) deepseekKeyInput.value = deepseekApiKey;
+}
+
+async function saveDeepseekApiKey() {
+  const value = deepseekKeyInput.value.trim();
+  await chrome.storage.local.set({ deepseekApiKey: value });
+  showToast(value ? 'Saved' : 'Cleared');
+}
+
+async function checkDeepseekKey() {
+  const { deepseekApiKey } = await chrome.storage.local.get('deepseekApiKey');
+  if (deepseekApiKey && deepseekApiKey.length > 10) {
+    setDot(deepseekDot, 'on');
+    deepseekText.textContent = `API key set (${deepseekApiKey.slice(0, 6)}…${deepseekApiKey.slice(-4)})`;
+  } else {
+    setDot(deepseekDot, 'off');
+    deepseekText.textContent = 'not set — paste your DeepSeek API key below';
   }
 }
 

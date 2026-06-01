@@ -1,12 +1,14 @@
 // Cross-origin fetchers. Run only inside the background service worker or
 // the extension popup — host_permissions bypass CORS there.
 
-export async function fetchAll({ zaiApiKey, zaiJwt, enabled = {} } = {}) {
+export async function fetchAll({ zaiApiKey, zaiJwt, deepseekApiKey, enabled = {} } = {}) {
   const jobs = [];
   if (enabled.zai !== false) jobs.push(fetchZai({ apiKey: zaiApiKey, jwt: zaiJwt }));
   if (enabled.claude !== false) jobs.push(fetchClaude());
   if (enabled.codex !== false) jobs.push(fetchCodex());
   if (enabled.ollama !== false) jobs.push(fetchOllama());
+  if (enabled.deepseek !== false) jobs.push(fetchDeepSeek({ apiKey: deepseekApiKey }));
+  if (enabled.minimax !== false) jobs.push(fetchMiniMax());
   return Promise.all(jobs);
 }
 
@@ -234,4 +236,124 @@ export async function fetchClaude() {
 function pushClaudeWindow(arr, label, w) {
   if (!w || typeof w.utilization !== 'number') return;
   arr.push({ label, used_pct: w.utilization, resets_at: w.resets_at || null });
+}
+
+export async function fetchDeepSeek({ apiKey } = {}) {
+  if (!apiKey) {
+    return {
+      provider: 'deepseek',
+      ok: false,
+      error: 'DeepSeek API key not set — add it in extension options',
+    };
+  }
+  try {
+    const res = await fetch('https://api.deepseek.com/user/balance', {
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' },
+    });
+    if (!res.ok) return { provider: 'deepseek', ok: false, error: `HTTP ${res.status}` };
+
+    const body = await res.json();
+    if (!body.is_available) {
+      return { provider: 'deepseek', ok: false, error: 'account unavailable' };
+    }
+
+    const infos = body.balance_infos || [];
+    if (infos.length === 0) {
+      return { provider: 'deepseek', ok: false, error: 'no balance info returned' };
+    }
+
+    const info = infos.find((b) => b.currency === 'USD') || infos[0];
+    const total = info.total_balance ?? '0';
+    const granted = info.granted_balance ?? '0';
+    const toppedUp = info.topped_up_balance ?? '0';
+    const cur = info.currency || 'USD';
+
+    return {
+      provider: 'deepseek',
+      ok: true,
+      plan: null,
+      windows: [{
+        label: `balance: ${cur} ${total} (topped up: ${toppedUp}, granted: ${granted})`,
+        used_pct: null,
+        balance_total: total,
+        balance_granted: granted,
+        balance_topped_up: toppedUp,
+        currency: cur,
+      }],
+    };
+  } catch (e) {
+    return { provider: 'deepseek', ok: false, error: e.message };
+  }
+}
+
+export async function fetchMiniMax() {
+  try {
+    // MiniMax's usage API requires a full API key in the Authorization header.
+    // The masked key in localStorage ("sk-api...xxx") won't work, so we first
+    // call /backend/token with session cookies to get the complete key, then
+    // use it to call the coding_plan/remains endpoint.
+
+    // Step 1: Get full API key via session cookies.
+    const tokenRes = await fetch('https://platform.minimax.io/backend/token', {
+      credentials: 'include',
+    });
+    if (!tokenRes.ok) {
+      const hint = tokenRes.status === 401 ? ' — login to platform.minimax.io?' : '';
+      return { provider: 'minimax', ok: false, error: `token HTTP ${tokenRes.status}${hint}` };
+    }
+    const tokenBody = await tokenRes.json();
+    if (tokenBody.base_resp?.status_code !== 0) {
+      return { provider: 'minimax', ok: false, error: tokenBody.base_resp?.status_msg || 'token fetch failed' };
+    }
+    const fullKey = tokenBody.tokens?.[0]?.complete_token;
+    if (!fullKey) {
+      return { provider: 'minimax', ok: false, error: 'no API key found — create one at platform.minimax.io' };
+    }
+
+    // Step 2: Fetch coding plan usage with the full key.
+    const usageRes = await fetch('https://platform.minimax.io/v1/api/openplatform/coding_plan/remains', {
+      headers: { 'Authorization': `Bearer ${fullKey}`, 'Accept': 'application/json' },
+    });
+    if (!usageRes.ok) return { provider: 'minimax', ok: false, error: `usage HTTP ${usageRes.status}` };
+
+    const usageBody = await usageRes.json();
+    if (usageBody.base_resp?.status_code !== 0) {
+      return { provider: 'minimax', ok: false, error: usageBody.base_resp?.status_msg || 'usage fetch failed' };
+    }
+
+    // Step 3: Parse model remains into windows.
+    const models = usageBody.model_remains || [];
+    const windows = [];
+
+    for (const m of models) {
+      // Interval (5h) window
+      if (m.current_interval_status === 1 && typeof m.current_interval_remaining_percent === 'number') {
+        const usedPct = Math.round((100 - m.current_interval_remaining_percent) * 10) / 10;
+        const resetsAt = m.end_time ? new Date(m.end_time).toISOString() : null;
+        windows.push({
+          label: `${m.model_name || 'model'} (5h)`,
+          used_pct: usedPct,
+          resets_at: resetsAt,
+        });
+      }
+      // Weekly window
+      if (m.current_weekly_status === 1 && typeof m.current_weekly_remaining_percent === 'number') {
+        const usedPct = Math.round((100 - m.current_weekly_remaining_percent) * 10) / 10;
+        const resetsAt = m.weekly_end_time ? new Date(m.weekly_end_time).toISOString() : null;
+        windows.push({
+          label: `${m.model_name || 'model'} (weekly)`,
+          used_pct: usedPct,
+          resets_at: resetsAt,
+        });
+      }
+    }
+
+    if (windows.length === 0) {
+      return { provider: 'minimax', ok: false, error: 'no active usage windows' };
+    }
+
+    return { provider: 'minimax', ok: true, plan: null, windows };
+  } catch (e) {
+    return { provider: 'minimax', ok: false, error: e.message };
+  }
 }

@@ -24,11 +24,15 @@ import { collectAll } from './collectors/index.mjs';
 import { resolveConfig } from './lib/env-resolver.mjs';
 
 const PORT = Number(process.env.USAGE_MONITOR_PORT || 3030);
-const PUSH_ONLY = new Set(['ollama', 'claude']);
+const PUSH_ONLY = new Set(['ollama', 'claude', 'minimax']);
 
 // In-memory cache for pushed data. Keyed by provider.
 // cache[provider] = { data, received_at }
 const cache = Object.create(null);
+
+// Enabled providers — pushed by the extension from options page.
+// null = not yet received (show all). Object = only show enabled=true.
+let enabledMap = null;
 
 // Agent-triggered refresh signalling. Set by POST /api/refresh; cleared when
 // the extension pushes fresh data for either push-only provider.
@@ -59,6 +63,11 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname.startsWith('/ingest/')) {
       await handleIngest(req, res, url);
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/enabled') {
+      await handleEnabled(req, res);
       return;
     }
 
@@ -139,6 +148,23 @@ async function handleIngest(req, res, url) {
   res.end(JSON.stringify({ ok: true, provider, received_at: receivedAtIso }));
 }
 
+async function handleEnabled(req, res) {
+  const body = await readBody(req);
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    res.writeHead(400, cors(req));
+    res.end('invalid json');
+    return;
+  }
+  if (typeof parsed === 'object' && parsed !== null) {
+    enabledMap = parsed;
+  }
+  res.writeHead(200, { ...cors(req), 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ ok: true }));
+}
+
 async function handleRefreshPost(req, res, url) {
   const waitRaw = Number(url.searchParams.get('wait') || 0);
   const waitSec = Math.min(Math.max(isFinite(waitRaw) ? waitRaw : 0, 0), MAX_WAIT_SECONDS);
@@ -196,7 +222,7 @@ function readBody(req) {
 
 async function buildMergedResults() {
   const serverSide = await collectAll(resolveConfig());
-  return serverSide.map((r) => {
+  const merged = serverSide.map((r) => {
     const cached = cache[r.provider];
     const useCache = PUSH_ONLY.has(r.provider) || (!r.ok && cached);
     if (useCache && cached) {
@@ -204,6 +230,12 @@ async function buildMergedResults() {
     }
     return { ...r, _source: 'server' };
   });
+  // Filter out providers disabled in extension options.
+  // enabledMap is null until the extension pushes its settings.
+  if (enabledMap && typeof enabledMap === 'object') {
+    return merged.filter((r) => enabledMap[r.provider] !== false);
+  }
+  return merged;
 }
 
 
@@ -337,7 +369,7 @@ const CLIENT_SCRIPT = `
   const updatedEl = document.getElementById('updated');
 
   function triggerExtensionRefresh() {
-    window.postMessage({ type: 'usage-monitor:refresh', providers: ['ollama', 'claude', 'codex', 'zai'] }, window.location.origin);
+    window.postMessage({ type: 'usage-monitor:refresh', providers: ['ollama', 'claude', 'codex', 'zai', 'deepseek', 'minimax'] }, window.location.origin);
   }
 
   async function fetchAndRender() {
