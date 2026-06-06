@@ -327,7 +327,7 @@ export async function fetchMiniMax() {
 
     for (const m of models) {
       // Interval (5h) window
-      if (m.current_interval_status === 1 && typeof m.current_interval_remaining_percent === 'number') {
+      if (m.current_interval_status !== undefined && m.current_interval_status !== 0 && typeof m.current_interval_remaining_percent === 'number') {
         const usedPct = Math.round((100 - m.current_interval_remaining_percent) * 10) / 10;
         const resetsAt = m.end_time ? new Date(m.end_time).toISOString() : null;
         windows.push({
@@ -337,7 +337,7 @@ export async function fetchMiniMax() {
         });
       }
       // Weekly window
-      if (m.current_weekly_status === 1 && typeof m.current_weekly_remaining_percent === 'number') {
+      if (m.current_weekly_status !== undefined && m.current_weekly_status !== 0 && typeof m.current_weekly_remaining_percent === 'number') {
         const usedPct = Math.round((100 - m.current_weekly_remaining_percent) * 10) / 10;
         const resetsAt = m.weekly_end_time ? new Date(m.weekly_end_time).toISOString() : null;
         windows.push({
